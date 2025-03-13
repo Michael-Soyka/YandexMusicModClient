@@ -18,6 +18,12 @@ const deviceInfo_js_1 = require("./deviceInfo.js");
 const platform_js_1 = require("../types/platform.js");
 const taskBarExtension_js_1 = require("./taskBarExtension/taskBarExtension.js");
 const store_js_1 = require('./store.js');
+
+const minBounds = {
+    minWidth: 768,
+    minHeight: 650,
+}
+
 const toggleWindowVisibility = (window, isVisible) => {
   if (isVisible) {
     window.show();
@@ -46,13 +52,34 @@ const toggleWindowState = (window) => {
 exports.toggleWindowState = toggleWindowState;
 
 const dimensions = (store_js_1.getModFeatures()?.windowBehavior?.saveWindowDimensionsOnRestart ?? true) ? store_js_1.getWindowDimensions() : undefined
-const position = store_js_1.getModFeatures()?.windowBehavior?.saveWindowPositionOnRestart ? store_js_1.getWindowPosition() : undefined
+let position = store_js_1.getModFeatures()?.windowBehavior?.saveWindowPositionOnRestart ? store_js_1.getWindowPosition() : undefined
+
+const isWithinDisplayBounds = (pos, display) =>  {
+    const area = display.workArea
+    return (pos.x >= area.x &&
+            pos.y >= area.y &&
+            pos.x < area.x + area.width &&
+            pos.y < area.y + area.height
+    )
+}
 
 const createWindow = async () => {
-  const withFrame = [platform_js_1.Platform.WINDOWS, platform_js_1.Platform.MACOS].includes(deviceInfo_js_1.devicePlatform);
+  const withFrame = [
+    platform_js_1.Platform.WINDOWS,
+    platform_js_1.Platform.MACOS,
+  ].includes(deviceInfo_js_1.devicePlatform);
   let scaleFactor = 1;
-  if (position)
-      scaleFactor = electron_1.screen.getPrimaryDisplay().scaleFactor / electron_1.screen.getDisplayNearestPoint(position)?.scaleFactor;
+  if (position) {
+    const primaryDisplay = electron_1.screen.getPrimaryDisplay(),
+        nearestDisplay = electron_1.screen.getDisplayNearestPoint(position);
+
+    scaleFactor = 1 / (nearestDisplay?.scaleFactor ?? primaryDisplay.scaleFactor);
+
+    if (!isWithinDisplayBounds(position, nearestDisplay)) {
+        position = undefined;
+    }
+
+  }
   const window = new electron_1.BrowserWindow({
     show: false,
     frame: withFrame,
@@ -62,10 +89,9 @@ const createWindow = async () => {
       x: 16,
       y: 10,
     },
-    minWidth: 768,
-    minHeight: 650,
-    width: Math.max((dimensions?.width ?? 1280) * scaleFactor, 768),
-    height: Math.max((dimensions?.height ?? 800) * scaleFactor, 650),
+    ...minBounds,
+    width: (dimensions?.width ?? 1280) * scaleFactor,
+    height: (dimensions?.height ?? 800) * scaleFactor,
     ...(position ? { x: position.x, y: position.y } : { center: true }),
     webPreferences: {
       devTools: (config_js_1.config.enableDevTools || store_js_1.getDevtoolsEnabled()),
@@ -78,6 +104,7 @@ const createWindow = async () => {
     },
   });
   window.once("ready-to-show", () => {
+    window.setSize((dimensions?.width ?? 1280), (dimensions?.height ?? 800));
     (0, exports.toggleWindowVisibility)(window, !(store_js_1.getModFeatures()?.windowBehavior?.startMinimized ?? false));
   });
   return window;
